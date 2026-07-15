@@ -8,7 +8,7 @@ Internal tools for Eagle Eye Networks support and engineering operations — das
 
 All tools authenticate via environment variables. The easiest way is a `.env` file — create it once in the repo root and it's picked up automatically.
 
-**Create `scripts/.env`:**
+**Create `.env` in the repo root** (next to `README.md`) — gitignored, never committed:
 
 ```bash
 # Required — JIRA (all tools)
@@ -212,6 +212,7 @@ python3 scripts/jira-account-backfill.py --silent # write + JSON summary (used b
 ```
 agarcia-test-tools/
 ├── README.md
+├── .env                              # YOUR credentials — create this, never commit (gitignored)
 ├── examples/
 │   └── morning-briefing-example.md
 ├── screenshots/
