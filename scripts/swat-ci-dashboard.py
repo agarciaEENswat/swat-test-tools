@@ -3,6 +3,11 @@
 
 import os, json, re, subprocess, pathlib
 from flask import Flask, jsonify, render_template_string, request as flask_request
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 

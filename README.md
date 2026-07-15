@@ -4,169 +4,155 @@ Internal tools for Eagle Eye Networks support and engineering operations — das
 
 ---
 
-## Quick Start — Dashboard Only
+## Credentials — Set This Up First
 
-Just want the dashboard? This is all you need:
+All tools authenticate via environment variables. The easiest way is a `.env` file — create it once in the repo root and it's picked up automatically.
+
+**Create `scripts/.env`:**
+
+```bash
+# Required — JIRA (all tools)
+JIRA_EMAIL=your-email@een.com
+JIRA_API_TOKEN=your-jira-api-token
+
+# Required — Zulip (dashboard releases tab + morning briefing)
+ZULIP_EMAIL=your-email@een.com
+ZULIP_API_KEY=your-zulip-api-key
+ZULIP_SITE=https://chat.eencloud.com
+
+# Optional — Zulip DM target (morning briefing only)
+ZULIP_USER_ID=your-numeric-zulip-id
+```
+
+**Where to get them:**
+- **JIRA API token:** [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) → Create API token
+- **Zulip API key:** chat.eencloud.com → Personal Settings → Account & Privacy → API key
+- **Zulip User ID:** chat.eencloud.com/#settings/account (numeric ID shown in profile)
+
+> Already have these in `~/.zshrc`? No change needed — your existing env vars take priority and the `.env` file is ignored.
+
+---
+
+## Quick Start — SWAT Dashboard
 
 ```bash
 # 1. Clone
 git clone https://github.com/agarciaEENswat/agarcia-test-tools.git
-cd agarcia-test-tools
+cd agarcia-test-tools/scripts
 
-# 2. Install Flask
-pip3 install flask
+# 2. Create your .env file (see Credentials section above)
 
-# 3. Add JIRA credentials to ~/.zshrc
-echo "export JIRA_EMAIL='your-email@een.com'" >> ~/.zshrc
-echo "export JIRA_API_TOKEN='your-api-token'" >> ~/.zshrc
-source ~/.zshrc
+# 3. Install dependencies
+pip install -r requirements.txt
 
 # 4. Run
-python3 scripts/ci-dashboard.py
+python3 swat-ci-dashboard.py
 ```
 
 Then open **http://localhost:8081**.
 
-To generate a JIRA API token: [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) → **Create API token**.
+To run on a different port:
+```bash
+CI_DASH_PORT=9000 python3 swat-ci-dashboard.py
+```
 
 ---
 
 ## Quick Start — Morning Briefing Skill
 
-Runs a full daily JIRA briefing and sends it to you as a Zulip DM.
-
-**Requirements:** [Claude Code](https://claude.ai/code) must be installed.
+Runs a full daily JIRA briefing and sends it to you as a Zulip DM. Requires [Claude Code](https://claude.ai/code).
 
 ```bash
-# 1. Clone (skip if you already did this for the dashboard)
+# 1. Clone (skip if already done)
 git clone https://github.com/agarciaEENswat/agarcia-test-tools.git
 cd agarcia-test-tools
 
 # 2. Copy scripts to ~/Scripts
 mkdir -p ~/Scripts
-cp scripts/jira-stalker.py ~/Scripts/jira-stalker.py
-cp scripts/jira-account-backfill.py ~/Scripts/jira-account-backfill.py
+cp scripts/jira-stalker.py ~/Scripts/
+cp scripts/jira-account-backfill.py ~/Scripts/
 
 # 3. Install the skill
 mkdir -p ~/.claude/skills/morning-briefing
 cp claude-skills/morning-briefing/SKILL.md ~/.claude/skills/morning-briefing/SKILL.md
 
-# 4. Add credentials to ~/.zshrc
-echo "export JIRA_EMAIL='your-email@een.com'" >> ~/.zshrc
-echo "export JIRA_API_TOKEN='your-api-token'" >> ~/.zshrc
-echo "export ZULIP_EMAIL='your-email@een.com'" >> ~/.zshrc
-echo "export ZULIP_API_KEY='your-zulip-api-key'" >> ~/.zshrc
-echo "export ZULIP_SITE='https://chat.eencloud.com'" >> ~/.zshrc
-echo "export ZULIP_USER_ID='your-numeric-zulip-id'" >> ~/.zshrc
-source ~/.zshrc
-
-# 5. Edit the TEAM list in jira-stalker to match your support team
-nano ~/Scripts/jira-stalker.py   # update the TEAM = [...] list at the top
+# 4. Edit the TEAM list in jira-stalker to match your support team
+nano ~/Scripts/jira-stalker.py   # update TEAM = [...] at the top
 ```
 
-Then in Claude Code, type:
+Then in Claude Code:
 ```
 /morning-briefing
 ```
-
-**Where to find your credentials:**
-- JIRA API token: [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-- Zulip API key: chat.eencloud.com → Personal Settings → Account & Privacy → API key
-- Zulip User ID: chat.eencloud.com/#settings/account (numeric ID in the URL or profile page)
-
----
-
-## Prerequisites
-
-All tools in this repo authenticate against JIRA using environment variables. Add these to your `~/.zshrc` or `~/.bashrc`:
-
-```bash
-export JIRA_URL='https://eagleeyenetworks.atlassian.net'
-export JIRA_EMAIL='your-email@een.com'
-export JIRA_API_TOKEN='your-api-token'
-```
-
-To generate a JIRA API token: go to [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) → **Create API token**.
-
-After adding to your shell config, run `source ~/.zshrc` to load them.
 
 ---
 
 ## Tools
 
-### EEN Ops Dashboard
+### SWAT CI Dashboard
 
-**File:** `scripts/ci-dashboard.py`
+**File:** `scripts/swat-ci-dashboard.py`
 
-A local web dashboard with three tabs — customer-impact ticket health, a live VMSSUP support board view, and a morning briefing viewer.
+A local web dashboard for monitoring customer-impact tickets, the VMSSUP support board, production releases, and daily CI activity.
 
-![CI Dashboard](screenshots/ci-dashboard.png)
+**Tabs:**
 
-#### Tab 1 — Customer Impact
-
-Shows the health of all open customer-impact tickets across EENS, EEPD, and Infrastructure.
-
+#### Customer Impact
 | Section | Description |
 |---------|-------------|
-| Stat tiles | Total CI tickets, Highest/High/Medium counts, Due ≤3 days — all clickable to JIRA |
-| By Priority | Doughnut chart — click a segment to open that priority filter in JIRA |
-| By Engineering Team | Doughnut chart — click a segment to see that team's tickets inline |
-| Age Distribution | Horizontal bar chart bucketed by ticket age (< 1 week → 6+ months) with High/Medium breakdown |
+| Stat tiles | Total CI tickets, Highest/High/Medium counts, Due ≤3 days |
+| By Priority / By Team | Doughnut charts — click to drill down |
+| Age Distribution | Tickets bucketed by age with High/Medium breakdown |
 | Out of Spec | Tickets violating SLA: Highest >7d, High >14d, any >28d |
 | Due Within 3 Days | Tickets with an approaching due date |
-| Repeatedly Punted | Tickets that have been added to 3+ sprints without closing |
-| Never in a Sprint | Tickets sitting in backlog with no engineering commitment |
-| Needs Team Response | Surfaced from a loaded morning briefing MD file (see Tab 3) |
+| Repeatedly Punted | Tickets added to 3+ sprints without closing |
+| Never in a Sprint | Backlog tickets with no engineering commitment |
+| Needs Team Response | Surfaced from a loaded morning briefing MD file |
 
-**Reporting section** (bottom of Tab 1):
-
+**Reporting section:**
 | Section | Description |
 |---------|-------------|
-| Throughput | Opened vs closed per week, last 4 weeks — bar chart |
-| Account Heat Map | Top accounts by open CI ticket count — click any row to see that account's tickets |
-| Engineer Load | Combined CI + VMSSUP ticket count per person |
-| Pipeline Health | Average ticket age per VMSSUP stage — shows where tickets are sitting longest |
+| Throughput | Opened vs closed per week, last 4 weeks |
+| Account Heat Map | Top accounts by open CI ticket count |
+| Engineer Load | Combined CI + VMSSUP count per person |
+| Pipeline Health | Avg ticket age per VMSSUP stage |
 
-All cards are **resizable** — drag the bottom-right corner. Sizes are saved to `localStorage` and restored on every load.
+#### VMSSUP Board
+Live view of the VMSSUP Kanban board grouped by assignee, with stall detection for High/Highest tickets with no movement in ≥3 days.
 
-#### Tab 2 — VMSSUP Board
+#### Morning Briefing
+Drop a `.md` briefing file to render it in-dashboard. Injects a summary banner and a Needs Team Response card into the CI tab.
 
-A live view of the VMSSUP support board, grouped by assignee. Mirrors what you'd see on the JIRA Kanban board but with stall detection added.
+#### Releases
+Last 30 days of production releases pulled from Zulip, correlated with CI tickets opened on the same day. Requires `ZULIP_*` env vars.
 
-| Section | Description |
-|---------|-------------|
-| Stat tiles | Total open, Highest/High/Medium counts, Stalled ≥3d — all clickable to JIRA |
-| Assignee rows | One row per assignee showing their tickets across all 4 active columns |
-| Columns | Assistance/To-Do, Triage, Engineering, Support Review |
-| Ticket cards | Priority-colored left border, summary, JIRA key, and age |
-| Stalled section | High/Highest tickets with no update in ≥3 days |
+#### Daily Activity
+Yesterday and today's CI ticket opens and closes at a glance.
 
-Assignee rows are **collapsible** — click the row header to expand/collapse.
+#### Daily Delta
+Snapshot-based diff — explains exactly why the CI count moved since yesterday (new tickets, labels added, reopened, resolved).
 
-#### Tab 3 — Morning Briefing
+#### ESN Health Check
+Enter an ESN to stream a live archiver health check — dhash provisioning, status server, pod key consistency, health scores, node state, and etag coverage. Requires `esn_archiver_check.py` in the same directory and `kubectl` access.
 
-Drop or browse a morning briefing `.md` file to view it rendered in the dashboard. Loading a file also:
-- Shows a summary banner on the Customer Impact tab (CI total, out of spec count, needs-response counts)
-- Injects a **Needs Team Response** card into the Customer Impact tab
+#### ESN Lookup
+Enter an ESN to look up device info, sub-account, and reseller from eenadmin. Requires an active eenadmin session.
 
-See `examples/morning-briefing-example.md` for the expected file format.
+---
 
-**Setup:**
+### ESN Archiver Health Check
+
+**File:** `scripts/esn_archiver_check.py`
+
+Standalone CLI tool for ESN archiver diagnostics. Aggregates dhash, status server, registry, pod key consistency, health scores, kubectl node state, and etag coverage into a single report.
 
 ```bash
-# Install dependencies
-pip install -r scripts/requirements.txt
-
-# Run
-python3 scripts/ci-dashboard.py
+python3 scripts/esn_archiver_check.py <ESN>
+# e.g.
+python3 scripts/esn_archiver_check.py 10098d23
 ```
 
-Then open **http://localhost:8081** in your browser.
-
-To run on a different port:
-```bash
-CI_DASH_PORT=9000 python3 scripts/ci-dashboard.py
-```
+Requires `kubectl` with access to the relevant cluster context.
 
 ---
 
@@ -174,47 +160,21 @@ CI_DASH_PORT=9000 python3 scripts/ci-dashboard.py
 
 **File:** `claude-skills/morning-briefing/SKILL.md`
 
-A Claude Code skill that runs a full daily JIRA briefing and sends it to Zulip as a DM. Also runs the account field backfill automatically before querying so the Account Heat Map is always fresh.
+Full daily JIRA briefing sent as a Zulip DM. Covers new tickets, high/medium priority open, customer impact age distribution, needs-team-response, out of spec, sprint carry-over, and per-team breakdowns.
 
-**What it covers:**
-
-| Section | Description |
-|---------|-------------|
-| Account field backfill | Fills in missing account fields on CI tickets before running (see JIRA Account Backfill below) |
-| New tickets since yesterday | New VMSSUP support tickets + new EEPD customer-impact tickets |
-| High priority open | VMSSUP high/highest tickets, flagged if no movement in ≥3 days |
-| Medium priority open | VMSSUP medium tickets, flagged if stalled ≥7 days |
-| Total open customer impact | Age distribution chart with priority breakdown and delta vs. yesterday |
-| Needs team response | Tickets waiting on a team reply, urgency-scored via jira-stalker |
-| Out of spec work items | CI tickets violating SLA thresholds by priority |
-| Sprint carry-over | Repeatedly punted / carried over / never in sprint breakdown |
-| Open tickets by engineering team | Per-team CI ticket counts with High/Medium breakdown and deltas |
-| Account field updates | Any tickets backfilled this run (only shown if > 0) |
-
-Also generates a full markdown report saved to `~/Documents/Morning Briefing/` and uploads it as an attachment to the Zulip DM.
-
-**Additional env vars required:**
-
-```bash
-export ZULIP_EMAIL='your-email@een.com'
-export ZULIP_API_KEY='your-zulip-api-key'
-export ZULIP_SITE='https://chat.eencloud.com'
-export ZULIP_USER_ID='your-zulip-user-id'  # numeric ID, find at chat.eencloud.com/#settings/account
-```
-
-**How to run:**
-
-In Claude Code, type:
-```
-/morning-briefing
-```
-
-**Install the skill:**
-
+**Install:**
 ```bash
 mkdir -p ~/.claude/skills/morning-briefing
 cp claude-skills/morning-briefing/SKILL.md ~/.claude/skills/morning-briefing/SKILL.md
 ```
+
+Also requires these scripts at `~/Scripts/`:
+```bash
+cp scripts/jira-stalker.py ~/Scripts/
+cp scripts/jira-account-backfill.py ~/Scripts/
+```
+
+Run in Claude Code: `/morning-briefing`
 
 ---
 
@@ -222,32 +182,14 @@ cp claude-skills/morning-briefing/SKILL.md ~/.claude/skills/morning-briefing/SKI
 
 **File:** `scripts/jira-stalker.py`
 
-Flags support tickets where the team hasn't responded recently. Groups results by last team member who commented, sorted by urgency score. Used by the morning briefing skill.
+Flags tickets where the support team hasn't responded within a threshold. Groups by last team commenter, sorted by urgency score. Used by the morning briefing skill.
 
-**Usage:**
 ```bash
-python3 scripts/jira-stalker.py                  # check both queues, 2-day threshold
-python3 scripts/jira-stalker.py --days 1         # stricter: flag after 1 day
-python3 scripts/jira-stalker.py --prio high      # high priority only
-python3 scripts/jira-stalker.py --prio medium
+python3 scripts/jira-stalker.py --prio high --days 1
+python3 scripts/jira-stalker.py --prio medium --days 2
 ```
 
-**Setup required:** Edit the `TEAM` list at the top of the script to match your support team members' JIRA display names:
-
-```python
-TEAM = [
-    "Your Name",
-    "Teammate Name",
-    ...
-]
-```
-
-The morning briefing skill expects this script at `~/Scripts/jira-stalker.py`:
-```bash
-cp scripts/jira-stalker.py ~/Scripts/jira-stalker.py
-```
-
-No additional dependencies — uses Python stdlib only.
+**Setup:** Edit the `TEAM` list at the top of the file with your team's JIRA display names.
 
 ---
 
@@ -255,47 +197,13 @@ No additional dependencies — uses Python stdlib only.
 
 **File:** `scripts/jira-account-backfill.py`
 
-Finds open customer-impact CI tickets where the account custom fields (`customfield_11063` etc.) are empty, parses account info from the description text, and writes it back to the structured JIRA fields. This keeps the Account Heat Map accurate.
+Fills in missing account custom fields on CI tickets by parsing the description. Keeps the Account Heat Map accurate.
 
-**Usage:**
 ```bash
-python3 scripts/jira-account-backfill.py              # dry run — shows what would change
-python3 scripts/jira-account-backfill.py --write      # apply changes
-python3 scripts/jira-account-backfill.py --silent     # write + output JSON summary (used by morning briefing)
+python3 scripts/jira-account-backfill.py          # dry run
+python3 scripts/jira-account-backfill.py --write  # apply
+python3 scripts/jira-account-backfill.py --silent # write + JSON summary (used by morning briefing)
 ```
-
-Always run a dry run first to review before writing.
-
-The morning briefing skill runs this automatically with `--silent` on every briefing. If any tickets were backfilled, the briefing MD will include an **Account Field Updates** section listing what was changed.
-
-**Install:**
-```bash
-cp scripts/jira-account-backfill.py ~/Scripts/jira-account-backfill.py
-```
-
-No additional dependencies — uses Python stdlib only.
-
----
-
-## Full Setup Checklist
-
-1. **Clone the repo**
-2. **Set env vars** in `~/.zshrc` (JIRA + Zulip — see Prerequisites above)
-3. **Install dashboard dependencies:** `pip install -r scripts/requirements.txt`
-4. **Copy scripts to `~/Scripts/`:**
-   ```bash
-   mkdir -p ~/Scripts
-   cp scripts/jira-stalker.py ~/Scripts/jira-stalker.py
-   cp scripts/jira-account-backfill.py ~/Scripts/jira-account-backfill.py
-   ```
-5. **Edit `TEAM` list** in `~/Scripts/jira-stalker.py` with your team's JIRA display names
-6. **Install morning briefing skill:**
-   ```bash
-   mkdir -p ~/.claude/skills/morning-briefing
-   cp claude-skills/morning-briefing/SKILL.md ~/.claude/skills/morning-briefing/SKILL.md
-   ```
-7. **Run the dashboard:** `python3 scripts/ci-dashboard.py` → open http://localhost:8081
-8. **Run a morning briefing:** In Claude Code, type `/morning-briefing`
 
 ---
 
@@ -305,17 +213,21 @@ No additional dependencies — uses Python stdlib only.
 agarcia-test-tools/
 ├── README.md
 ├── examples/
-│   └── morning-briefing-example.md             # Example briefing file for the MD viewer
+│   └── morning-briefing-example.md
 ├── screenshots/
 │   └── ci-dashboard.png
 ├── scripts/
-│   ├── ci-dashboard.py                         # EEN Ops Dashboard (3 tabs)
-│   ├── jira-stalker.py                         # Flags tickets with no team response
-│   ├── jira-account-backfill.py               # Backfills account fields on CI tickets
-│   └── requirements.txt                        # Python dependencies (Flask)
+│   ├── swat-ci-dashboard.py          # SWAT CI Dashboard (main)
+│   ├── esn_archiver_check.py         # ESN archiver health check CLI
+│   ├── jira_client.py                # JIRA API helpers
+│   ├── queries.py                    # JQL query constants
+│   ├── themes.py                     # Ticket theme classifier
+│   ├── jira-stalker.py               # No-response ticket detector
+│   ├── jira-account-backfill.py      # Account field backfill
+│   └── requirements.txt              # Python dependencies
 ├── claude-skills/
 │   └── morning-briefing/
-│       └── SKILL.md                            # Claude Code morning briefing skill
+│       └── SKILL.md
 ├── qa-starter-kit/
 │   └── README.md
 └── Notes/
