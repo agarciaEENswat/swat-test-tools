@@ -60,30 +60,21 @@ CI_DASH_PORT=9000 python3 swat-ci-dashboard.py
 
 ## Quick Start — Morning Briefing Skill
 
-Runs a full daily JIRA briefing and sends it to you as a Zulip DM. Requires [Claude Code](https://claude.ai/code).
+**Moved.** As of 2026-09-21 the morning-briefing skill, `briefing-env` and the
+`~/Scripts` helpers live in
+[acg-swat-master](https://github.com/agarciaEENswat/acg-swat-master), so that one
+repo plus the Bitwarden `shell-env` note is enough to set up a machine:
 
 ```bash
-# 1. Clone (skip if already done)
-git clone https://github.com/agarciaEENswat/agarcia-test-tools.git
-cd agarcia-test-tools
-
-# 2. Copy scripts to ~/Scripts
-mkdir -p ~/Scripts
-cp scripts/jira-stalker.py ~/Scripts/
-cp scripts/jira-account-backfill.py ~/Scripts/
-
-# 3. Install the skill
-mkdir -p ~/.claude/skills/morning-briefing
-cp claude-skills/morning-briefing/SKILL.md ~/.claude/skills/morning-briefing/SKILL.md
-
-# 4. Edit the TEAM list in jira-stalker to match your support team
-nano ~/Scripts/jira-stalker.py   # update TEAM = [...] at the top
+git clone https://github.com/agarciaEENswat/acg-swat-master
+cd acg-swat-master && ./bootstrap/bootstrap.sh
 ```
 
-Then in Claude Code:
-```
-/morning-briefing
-```
+That installs the skill, both helper scripts and the credential wrapper, and
+sets up the SWAT skills from Confluence. See `bootstrap/SETUP.md` there.
+
+Still edit the `TEAM` list in `~/Scripts/jira-stalker.py` to match your support
+team after installing.
 
 ---
 
@@ -156,67 +147,49 @@ Requires `kubectl` with access to the relevant cluster context.
 
 ---
 
-### Morning Briefing (Claude Code Skill)
+### Morning Briefing (Claude Code Skill) — moved
 
-**File:** `claude-skills/morning-briefing/SKILL.md`
+The skill, `briefing-env` and the `~/Scripts` helpers now live in
+[acg-swat-master](https://github.com/agarciaEENswat/acg-swat-master) under
+`claude-skills/` and `scripts/`, installed by `./bootstrap/bootstrap.sh`.
+Full documentation is in that repo's `bootstrap/SETUP.md`.
 
-Full daily JIRA briefing sent as a Zulip DM. Covers new tickets, high/medium priority open, customer impact age distribution, needs-team-response, out of spec, sprint carry-over, and per-team breakdowns.
-
-**Install:**
-```bash
-mkdir -p ~/.claude/skills/morning-briefing
-cp claude-skills/morning-briefing/SKILL.md ~/.claude/skills/morning-briefing/SKILL.md
-```
-
-Also requires these scripts at `~/Scripts/`:
-```bash
-cp scripts/jira-stalker.py ~/Scripts/
-cp scripts/jira-account-backfill.py ~/Scripts/
-```
-
-And the credential wrapper at `~/.local/bin/briefing-env`:
-```bash
-cp scripts/briefing-env ~/.local/bin/ && chmod +x ~/.local/bin/briefing-env
-~/.local/bin/briefing-env --check    # confirm creds resolve
-```
-
-Every JIRA/Zulip command in the skill runs under this wrapper, which exports the
-credentials from the Bitwarden `shell-env` note per process. `source ~/.zshrc`
-cannot work: `bw-env.zsh` only *defines* `bwload` and deliberately does not run
-at shell startup, and each Claude Code tool call is a separate process, so
-nothing inherits a `bwload` from another terminal. When the vault has re-locked,
-run `~/.local/bin/briefing-env --unlock` in your own terminal first — it needs
-your master password, and there is no tty to prompt on from inside Claude Code.
+They were moved on 2026-09-21 so a new laptop needs exactly one clone plus the
+Bitwarden `shell-env` note, instead of assembling pieces from two repos.
 
 Run in Claude Code: `/morning-briefing`
 
 ---
 
-### JIRA Stalker
+### JIRA Stalker — moved
 
-**File:** `scripts/jira-stalker.py`
-
-Flags tickets where the support team hasn't responded within a threshold. Groups by last team commenter, sorted by urgency score. Used by the morning briefing skill.
+Now at `scripts/jira-stalker.py` in
+[acg-swat-master](https://github.com/agarciaEENswat/acg-swat-master), installed
+to `~/Scripts/` by that repo's bootstrap. Flags tickets where the support team
+hasn't responded within a threshold, grouped by last team commenter and sorted
+by urgency score. Used by the morning briefing skill.
 
 ```bash
-python3 scripts/jira-stalker.py --prio high --days 1
-python3 scripts/jira-stalker.py --prio medium --days 2
+~/.local/bin/briefing-env python3 ~/Scripts/jira-stalker.py --prio high --days 1
+~/.local/bin/briefing-env python3 ~/Scripts/jira-stalker.py --prio medium --days 2
 ```
 
 **Setup:** Edit the `TEAM` list at the top of the file with your team's JIRA display names.
 
 ---
 
-### JIRA Account Backfill
+### JIRA Account Backfill — moved
 
-**File:** `scripts/jira-account-backfill.py`
-
-Fills in missing account custom fields on CI tickets by parsing the description. Keeps the Account Heat Map accurate.
+Now at `scripts/jira-account-backfill.py` in
+[acg-swat-master](https://github.com/agarciaEENswat/acg-swat-master), installed
+to `~/Scripts/` by that repo's bootstrap. Fills in missing account custom fields
+on CI tickets by parsing the description, which keeps the Account Heat Map
+accurate.
 
 ```bash
-python3 scripts/jira-account-backfill.py          # dry run
-python3 scripts/jira-account-backfill.py --write  # apply
-python3 scripts/jira-account-backfill.py --silent # write + JSON summary (used by morning briefing)
+~/.local/bin/briefing-env python3 ~/Scripts/jira-account-backfill.py           # dry run
+~/.local/bin/briefing-env python3 ~/Scripts/jira-account-backfill.py --write   # apply
+~/.local/bin/briefing-env python3 ~/Scripts/jira-account-backfill.py --silent  # write + JSON summary (morning briefing)
 ```
 
 ---
@@ -237,16 +210,16 @@ agarcia-test-tools/
 │   ├── jira_client.py                # JIRA API helpers
 │   ├── queries.py                    # JQL query constants
 │   ├── themes.py                     # Ticket theme classifier
-│   ├── jira-stalker.py               # No-response ticket detector
-│   ├── jira-account-backfill.py      # Account field backfill
 │   └── requirements.txt              # Python dependencies
-├── claude-skills/
-│   └── morning-briefing/
-│       └── SKILL.md
 ├── qa-starter-kit/
 │   └── README.md
 └── Notes/
 ```
+
+Moved to [acg-swat-master](https://github.com/agarciaEENswat/acg-swat-master) on
+2026-09-21: `briefing-env`, `jira-stalker.py`, `jira-account-backfill.py` and
+`claude-skills/morning-briefing/`. That repo's `bootstrap/bootstrap.sh` installs
+them, so a new machine needs one clone plus the Bitwarden `shell-env` note.
 
 ---
 
