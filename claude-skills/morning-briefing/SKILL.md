@@ -1,6 +1,6 @@
 ---
 name: morning-briefing
-description: Run the daily morning JIRA briefing for Eagle Eye Networks support. Covers new VMSSUP tickets since yesterday, open high/medium priority tickets, and team response staleness via jira-stalker. Use when user asks for "morning briefing" or "daily briefing".
+description: Run the daily morning JIRA briefing for Eagle Eye Networks support. Covers new VMSSUP tickets since yesterday, open high/medium priority tickets, and team response staleness via jira-stalker. Use when user asks for "morning briefing" or "daily briefing", or sends the bare trigger word "RUN".
 allowed-tools: Bash
 ---
 
@@ -10,6 +10,21 @@ Runs a full daily JIRA briefing for the EEN support team. Covers three sections:
 1. New tickets since yesterday
 2. Open high/medium priority tickets
 3. Team response staleness (via jira-stalker.py)
+
+## Run it end to end without stopping
+
+Adam's standing instruction (given 2026-09-21): **run every step, including the
+side-effectful ones, without pausing to ask.** Specifically authorized:
+
+- **Send the Zulip DM** at the end. It goes to `to=[747]`, which is Adam
+  himself — verified against `/api/v1/users/me`.
+- **Sync the `repeatedly-punted` JIRA label** in Section 7, adding and removing
+  it as the sprint-change counts change.
+
+Do not ask for confirmation on either. Report what changed afterwards.
+
+The only thing that legitimately stops a run is a locked Bitwarden vault — see
+Credentials below. Everything else should be carried through to the DM.
 
 ## CRITICAL: Credentials
 
@@ -308,7 +323,22 @@ Save sprint carry-over IDs to the snapshot for delta comparison:
 
 After categorizing, sync the `repeatedly-punted` JIRA label so it always reflects current sprint-change counts. This makes the set queryable via JQL (`labels = "repeatedly-punted"`) without hardcoding keys.
 
-Add the label to tickets newly qualifying (3+ sprints). Remove it from tickets that previously had it but no longer qualify (e.g. resolved).
+Add the label to tickets newly qualifying (3+ sprints). Remove it from tickets
+that carry it but no longer qualify.
+
+**Derive removals from the live label set, not from the snapshot.** An earlier
+version diffed against `yesterday_snapshot.sprint_punted_ids`; because snapshots
+are pruned after 7 days and a missing snapshot reads as an empty set, removals
+never fired and the label accumulated on 51 tickets (47 of them Closed) before
+this was caught. Querying JIRA for the current holders makes the sync
+self-healing.
+
+Removal policy, to keep an automated run from making a surprise bulk change:
+
+- A holder whose status is in the **Done** category can no longer be punted, so
+  drop the label — safe cleanup, do it silently.
+- A holder that is **still open** but not in today's punted set is a judgment
+  call: leave the label alone and list it in the run notes instead.
 
 ```python
 import subprocess, json, os
@@ -335,13 +365,38 @@ for key in punted_keys:
         set_labels(key, labels + ['repeatedly-punted'])
         print(f"  + labeled {key}")
 
-# Remove label from tickets that no longer qualify
-prev_punted = set(yesterday_snapshot.get('sprint_punted_ids', []))
-for key in prev_punted - set(punted_keys):
-    labels = get_labels(key)
-    if 'repeatedly-punted' in labels:
+# Remove the label from current holders that no longer qualify.
+# Query the live set so the sync self-heals regardless of snapshot history.
+def current_holders():
+    """[(key, status_category)] for every ticket carrying the label."""
+    out, tok = [], None
+    while True:
+        payload = {"jql": 'labels = "repeatedly-punted"', "maxResults": 100,
+                   "fields": ["status"]}
+        if tok:
+            payload["nextPageToken"] = tok
+        d = jira_search(payload)          # POST /rest/api/3/search/jql
+        out += [(i["key"], i["fields"]["status"]["statusCategory"]["key"])
+                for i in d.get("issues", [])]
+        tok = d.get("nextPageToken")
+        if not tok or not d.get("issues"):
+            break
+    return out
+
+stale_open = []
+for key, cat in current_holders():
+    if key in punted_keys:
+        continue
+    if cat == "done":                     # closed: cannot be punted any more
+        labels = get_labels(key)
         set_labels(key, [l for l in labels if l != 'repeatedly-punted'])
-        print(f"  - removed label from {key}")
+        print(f"  - removed label from {key} (closed)")
+    else:
+        stale_open.append(key)            # still open: report, do not touch
+
+if stale_open:
+    print(f"  ! {len(stale_open)} open ticket(s) hold the label but are not in "
+          f"today's punted set: {', '.join(stale_open)}")
 ```
 
 The live JQL for this set (bookmarkable):
