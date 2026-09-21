@@ -32,9 +32,22 @@ CACHE="${BW_SESSION_CACHE:-$HOME/.config/swat-dash/bw-session}"
 CACHE_DIR="$(dirname "$CACHE")"
 
 # Checked for presence after export. Everything else in the note is exported
-# too; these are just the ones the briefing actually needs.
+# too; these are just the ones the briefing and the SWAT skills actually need.
+# Only JIRA_* is required — the rest are per-skill, and a missing one should
+# disable that skill, not fail every command.
 REQUIRED=(JIRA_EMAIL JIRA_API_TOKEN)
-OPTIONAL=(ZULIP_EMAIL ZULIP_API_KEY ZULIP_SITE)
+OPTIONAL=(
+  ZULIP_EMAIL ZULIP_API_KEY ZULIP_SITE   # zulip, morning-briefing
+  EEN_USERNAME EEN_PASSWORD              # support-tool, getlogs (V1 auth, needs VPN)
+)
+# Zoho is deliberately not configured (decided 2026-09-21). The zoho-desk skill
+# treats its OAuth triple as break-glass anyway — the supported path is the
+# zoho-mcp MCP server, which holds no local token and cannot trip Zoho's
+# refresh-endpoint lockout. If Zoho work ever becomes necessary, get zoho-mcp
+# provisioned rather than minting a Self Client here, and add the PreToolUse
+# write guard that zoho-desk/SKILL.md assumes exists first.
+# EEN_CLI is a path to the CLI binary, not a secret; set it once the binary
+# exists locally.
 
 die()  { printf '  briefing-env error: %s\n' "$1" >&2; exit 1; }
 note() { printf '  briefing-env: %s\n' "$1" >&2; }
