@@ -24,6 +24,20 @@ from urllib.parse import urlencode
 from urllib.error import HTTPError
 from datetime import datetime, timezone, timedelta
 
+
+def parse_jira_dt(raw):
+    """Parse a JIRA timestamp into an aware datetime.
+
+    JIRA returns offsets without a colon ("2026-09-18T08:15:58.883-0500").
+    datetime.fromisoformat only accepts that from Python 3.11 on, so insert the
+    colon ourselves — otherwise this raises ValueError under 3.9/3.10.
+    """
+    s = raw.replace("Z", "+00:00")
+    if len(s) >= 5 and s[-5] in "+-" and s[-3] != ":":
+        s = f"{s[:-2]}:{s[-2:]}"
+    return datetime.fromisoformat(s)
+
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 JIRA_BASE = "https://eagleeyenetworks.atlassian.net"
@@ -124,7 +138,7 @@ def last_team_comment(comments):
     for c in sorted(comments, key=lambda x: x["created"], reverse=True):
         author = c.get("author", {}).get("displayName", "")
         if author in TEAM:
-            dt = datetime.fromisoformat(c["created"].replace("Z", "+00:00"))
+            dt = parse_jira_dt(c["created"])
             return dt, author
     return None, None
 
@@ -135,7 +149,7 @@ def last_any_comment(comments):
         return None, None, None
     c = max(comments, key=lambda x: x["created"])
     author = c.get("author", {}).get("displayName", "Unknown")
-    dt = datetime.fromisoformat(c["created"].replace("Z", "+00:00"))
+    dt = parse_jira_dt(c["created"])
     body = _extract_comment_text(c.get("body", ""))
     return dt, author, body
 
@@ -202,7 +216,7 @@ def get_sprint(fields):
     if not end_raw:
         return name, None, "no end date"
     try:
-        end_dt = datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
+        end_dt = parse_jira_dt(end_raw)
         days_left = (end_dt.date() - datetime.now(timezone.utc).date()).days
         if days_left < 0:
             display = red(f"⚠ SPRINT ENDED {abs(days_left)}d ago")

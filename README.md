@@ -174,6 +174,20 @@ cp scripts/jira-stalker.py ~/Scripts/
 cp scripts/jira-account-backfill.py ~/Scripts/
 ```
 
+And the credential wrapper at `~/.local/bin/briefing-env`:
+```bash
+cp scripts/briefing-env ~/.local/bin/ && chmod +x ~/.local/bin/briefing-env
+~/.local/bin/briefing-env --check    # confirm creds resolve
+```
+
+Every JIRA/Zulip command in the skill runs under this wrapper, which exports the
+credentials from the Bitwarden `shell-env` note per process. `source ~/.zshrc`
+cannot work: `bw-env.zsh` only *defines* `bwload` and deliberately does not run
+at shell startup, and each Claude Code tool call is a separate process, so
+nothing inherits a `bwload` from another terminal. When the vault has re-locked,
+run `~/.local/bin/briefing-env --unlock` in your own terminal first — it needs
+your master password, and there is no tty to prompt on from inside Claude Code.
+
 Run in Claude Code: `/morning-briefing`
 
 ---

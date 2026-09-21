@@ -13,17 +13,32 @@ Runs a full daily JIRA briefing for the EEN support team. Covers three sections:
 
 ## CRITICAL: Credentials
 
-Always source credentials before any API call:
+Every command that talks to JIRA or Zulip must run under `~/.local/bin/briefing-env`, which
+exports the credentials from the Bitwarden `shell-env` note into that one
+process:
+
 ```bash
-source ~/.zshrc 2>/dev/null
+~/.local/bin/briefing-env --check    # confirm creds resolve before starting; runs nothing
 ```
+
+`source ~/.zshrc` does **not** work here — `bw-env.zsh` only *defines* `bwload`
+and deliberately does not run at shell startup, and every tool call is a fresh
+process anyway, so nothing inherits a `bwload` from another terminal.
+
+If `--check` reports the vault is locked, stop and tell the user to run
+`~/.local/bin/briefing-env --unlock` in their own terminal (it needs their master password).
+Do not attempt the unlock from here — there is no tty to prompt on.
+
+Because the outer shell expands `$JIRA_EMAIL` before `~/.local/bin/briefing-env` runs, always
+defer expansion to the child with `sh -c '...'` and pass JSON bodies on stdin
+via `-d @-`, as every example below does.
 
 ## Step 0 — Account Field Backfill
 
 Before anything else, backfill account fields on any CI tickets that are missing them:
 
 ```bash
-source ~/.zshrc 2>/dev/null; python3 ~/Scripts/jira-account-backfill.py --silent
+~/.local/bin/briefing-env python3 ~/Scripts/jira-account-backfill.py --silent
 ```
 
 This outputs a single JSON line. Parse it:
@@ -63,14 +78,15 @@ Store this as `yesterday_snapshot`. Use it to compute deltas throughout the brie
 ## Section 1 — New Tickets Since Yesterday
 
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   -X POST "https://eagleeyenetworks.atlassian.net/rest/api/3/search/jql" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jql": "project = VMSSUP AND created >= \"YYYY-MM-DD\" AND NOT (description ~ \"task id\" AND reporter in (604fb2f681b82500682d022a)) ORDER BY created DESC",
-    "maxResults": 30,
-    "fields": ["summary", "status", "priority", "created", "assignee"]
-  }'
+  -H "Content-Type: application/json" -d @-' <<'JSON'
+{
+  "jql": "project = VMSSUP AND created >= \"YYYY-MM-DD\" AND NOT (description ~ \"task id\" AND reporter in (604fb2f681b82500682d022a)) ORDER BY created DESC",
+  "maxResults": 30,
+  "fields": ["summary", "status", "priority", "created", "assignee"]
+}
+JSON
 ```
 
 Replace `YYYY-MM-DD` with yesterday's date.
@@ -82,14 +98,15 @@ Parse and display as a table: Ticket | Priority | Status | Assignee | Created | 
 Run in parallel with Section 1:
 
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   -X POST "https://eagleeyenetworks.atlassian.net/rest/api/3/search/jql" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jql": "project in (EEPD, Infrastructure) AND labels in (customer-impact) AND created >= \"YYYY-MM-DD\" AND issuetype not in (Improvement, story) ORDER BY created DESC",
-    "maxResults": 30,
-    "fields": ["summary", "status", "priority", "created", "assignee", "project", "labels"]
-  }'
+  -H "Content-Type: application/json" -d @-' <<'JSON'
+{
+  "jql": "project in (EEPD, Infrastructure) AND labels in (customer-impact) AND created >= \"YYYY-MM-DD\" AND issuetype not in (Improvement, story) ORDER BY created DESC",
+  "maxResults": 30,
+  "fields": ["summary", "status", "priority", "created", "assignee", "project", "labels"]
+}
+JSON
 ```
 
 Display as a table: Ticket | Project | Priority | Status | Assignee | Created | Summary
@@ -98,14 +115,15 @@ If none: show `None.`
 ## Section 2 — Open High Priority (flag if no update in ≥3 days)
 
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   -X POST "https://eagleeyenetworks.atlassian.net/rest/api/3/search/jql" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jql": "project = VMSSUP AND priority in (Highest, High) AND statusCategory != Done AND NOT (description ~ \"task id\" AND reporter in (604fb2f681b82500682d022a)) ORDER BY updated ASC",
-    "maxResults": 20,
-    "fields": ["summary", "status", "priority", "updated", "created", "assignee"]
-  }'
+  -H "Content-Type: application/json" -d @-' <<'JSON'
+{
+  "jql": "project = VMSSUP AND priority in (Highest, High) AND statusCategory != Done AND NOT (description ~ \"task id\" AND reporter in (604fb2f681b82500682d022a)) ORDER BY updated ASC",
+  "maxResults": 20,
+  "fields": ["summary", "status", "priority", "updated", "created", "assignee"]
+}
+JSON
 ```
 
 Flag tickets with `updated >= 3 days ago` as `*** NO MOVEMENT`.
@@ -114,14 +132,15 @@ Display as a table: Ticket | Priority | Status | Assignee | Created | Summary
 ## Section 3 — Open Medium Priority (flag if no update in ≥7 days)
 
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   -X POST "https://eagleeyenetworks.atlassian.net/rest/api/3/search/jql" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jql": "project = VMSSUP AND priority = Medium AND statusCategory != Done AND NOT (description ~ \"task id\" AND reporter in (604fb2f681b82500682d022a)) ORDER BY updated ASC",
-    "maxResults": 20,
-    "fields": ["summary", "status", "priority", "updated", "created", "assignee"]
-  }'
+  -H "Content-Type: application/json" -d @-' <<'JSON'
+{
+  "jql": "project = VMSSUP AND priority = Medium AND statusCategory != Done AND NOT (description ~ \"task id\" AND reporter in (604fb2f681b82500682d022a)) ORDER BY updated ASC",
+  "maxResults": 20,
+  "fields": ["summary", "status", "priority", "updated", "created", "assignee"]
+}
+JSON
 ```
 
 Flag tickets with `updated >= 7 days ago` as `*** STALLED`.
@@ -132,14 +151,15 @@ Display as a table: Ticket | Status | Assignee | Created | Summary
 Fetch all tickets (paginate if needed) to compute age distribution:
 
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   -X POST "https://eagleeyenetworks.atlassian.net/rest/api/3/search/jql" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jql": "((project = EENS AND reporter not in (604fb2f681b82500682d022a)) OR (project in (EEPD, Infrastructure) AND labels in (customer-impact))) AND issuetype not in (Improvement, story) AND status not in (closed, Done, resolved, \"Won'\''t Investigate\", \"Not Needed\", Duplicate) AND priority not in (Low, Lowest) AND (duedate is EMPTY OR duedate <= now()) ORDER BY created ASC",
-    "maxResults": 100,
-    "fields": ["created", "priority"]
-  }'
+  -H "Content-Type: application/json" -d @-' <<'JSON'
+{
+  "jql": "((project = EENS AND reporter not in (604fb2f681b82500682d022a)) OR (project in (EEPD, Infrastructure) AND labels in (customer-impact))) AND issuetype not in (Improvement, story) AND status not in (closed, Done, resolved, \"Won't Investigate\", \"Not Needed\", Duplicate) AND priority not in (Low, Lowest) AND (duedate is EMPTY OR duedate <= now()) ORDER BY created ASC",
+  "maxResults": 100,
+  "fields": ["created", "priority", "customfield_10500"]
+}
+JSON
 ```
 
 If `nextPageToken` is present in the response, keep paginating until all tickets are collected.
@@ -159,8 +179,16 @@ def normalize_priority(p):
     if p in ("Lowest", "Low"):   return "Low"
     return p  # Medium
 
+def parse_jira_dt(raw):
+    # JIRA returns offsets without a colon ("...883-0500"), which
+    # fromisoformat only accepts from Python 3.11 on. `python3` here is 3.9.
+    s = raw.replace("Z", "+00:00")
+    if len(s) >= 5 and s[-5] in "+-" and s[-3] != ":":
+        s = f"{s[:-2]}:{s[-2:]}"
+    return datetime.fromisoformat(s)
+
 for issue in issues:
-    created = datetime.fromisoformat(issue["fields"]["created"].replace("Z", "+00:00"))
+    created = parse_jira_dt(issue["fields"]["created"])
     days = (now - created).days
     prio = normalize_priority((issue["fields"].get("priority") or {}).get("name", "Medium"))
     if days < 7:        buckets["< 1 week"][prio] += 1
@@ -199,14 +227,15 @@ Customer-impact tickets that have been open longer than allowed for their priori
 - **Any**: open > 28 days
 
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
   -X POST "https://eagleeyenetworks.atlassian.net/rest/api/3/search/jql" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jql": "((project = EENS AND reporter not in (604fb2f681b82500682d022a)) OR (project in (EEPD, Infrastructure) AND labels in (customer-impact))) AND issuetype not in (Improvement, story) AND statusCategory not in (Done) AND priority not in (Low, Lowest) AND (duedate is EMPTY OR duedate <= now()) AND ((priority in (High) AND created < \"-14d\") OR (priority in (Highest) AND created < \"-7d\") OR (created < \"-28d\")) ORDER BY priority DESC, created ASC",
-    "maxResults": 50,
-    "fields": ["summary", "status", "priority", "created", "assignee", "project"]
-  }'
+  -H "Content-Type: application/json" -d @-' <<'JSON'
+{
+  "jql": "((project = EENS AND reporter not in (604fb2f681b82500682d022a)) OR (project in (EEPD, Infrastructure) AND labels in (customer-impact))) AND issuetype not in (Improvement, story) AND statusCategory not in (Done) AND priority not in (Low, Lowest) AND (duedate is EMPTY OR duedate <= now()) AND ((priority in (High) AND created < \"-14d\") OR (priority in (Highest) AND created < \"-7d\") OR (created < \"-28d\")) ORDER BY priority DESC, created ASC",
+  "maxResults": 50,
+  "fields": ["summary", "status", "priority", "created", "assignee", "project"]
+}
+JSON
 ```
 
 Display as a table: Ticket | Project | Priority | Status | Assignee | Age | Summary
@@ -217,7 +246,9 @@ Note tickets that are newly out-of-spec today vs yesterday, and any that have be
 
 This section runs **after Section 4** since it reuses the customer-impact ticket keys already collected.
 
-For each ticket key, fetch the changelog:
+For each ticket key, fetch the changelog. This snippet reads credentials from
+`os.environ`, so the interpreter itself must be launched under the wrapper —
+`~/.local/bin/briefing-env python3 script.py`, not a bare `python3`:
 
 ```python
 import subprocess, json, os
@@ -358,8 +389,8 @@ Save `team_counts` to today's snapshot as a dict of `{team_name: total}`.
 Run the stalker script twice — once for high (1-day threshold), once for medium (2-day threshold). Run in parallel with Section 4:
 
 ```bash
-source ~/.zshrc 2>/dev/null; python3 ~/Scripts/jira-stalker.py --prio high --days 1 2>&1
-source ~/.zshrc 2>/dev/null; python3 ~/Scripts/jira-stalker.py --prio medium --days 2 2>&1
+~/.local/bin/briefing-env python3 ~/Scripts/jira-stalker.py --prio high --days 1 2>&1
+~/.local/bin/briefing-env python3 ~/Scripts/jira-stalker.py --prio medium --days 2 2>&1
 ```
 
 The stalker now outputs **two buckets**:
@@ -471,12 +502,13 @@ The document should contain **all sections in full detail** — every ticket lis
 ### Step 1: Upload the report document
 
 ```bash
-source ~/.zshrc 2>/dev/null
-UPLOAD_RESULT=$(curl -s -u "$ZULIP_EMAIL:$ZULIP_API_KEY" \
+~/.local/bin/briefing-env sh -c 'curl -s -u "$ZULIP_EMAIL:$ZULIP_API_KEY" \
   "$ZULIP_SITE/api/v1/user_uploads" \
-  -F "filename=@$HOME/Documents/Morning Briefing/morning-briefing-YYYY-MM-DD.md")
-DOC_URI=$(echo "$UPLOAD_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['uri'])")
+  -F "filename=@$HOME/Documents/Morning Briefing/morning-briefing-YYYY-MM-DD.md"' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['uri'])"
 ```
+
+That prints the `DOC_URI` to use in the message below.
 
 ### Step 2: Send briefing DM with document link
 
@@ -487,12 +519,17 @@ Append the document link to the end of the briefing message:
 📎 [Full Detail Report](DOC_URI)
 ```
 
+Write the message body to a file first, then let curl URL-encode it from there —
+the briefing contains newlines, backticks and quotes that mangle badly when
+inlined into a shell argument:
+
 ```bash
-source ~/.zshrc 2>/dev/null; curl -s -u "$ZULIP_EMAIL:$ZULIP_API_KEY" \
+# briefing body already written to /tmp/briefing-msg.md
+~/.local/bin/briefing-env sh -c 'curl -s -u "$ZULIP_EMAIL:$ZULIP_API_KEY" \
   "$ZULIP_SITE/api/v1/messages" \
   -d "type=direct" \
   -d "to=[747]" \
-  --data-urlencode "content=<full briefing text with document link at bottom>"
+  --data-urlencode "content@/tmp/briefing-msg.md"'
 ```
 
 Format the Zulip message in plain markdown (same content as shown in the Claude response). No need to confirm before sending — this is an automated step.
