@@ -1,7 +1,7 @@
 # Eagle Eye Networks - Master Technical Reference Guide
 
-**Last Updated:** 2026-01-06
-**Compiled from:** ACG Support Documentation, SWAT Procedures, Diagnostic Tools, Customer Impact Runbooks
+**Last Updated:** 2026-09-21
+**Compiled from:** ACG Support Documentation, SWAT Procedures, Diagnostic Tools, Customer Impact Runbooks, "ACG (Swat)" and "ACG Cheat Sheet (support)" (Google Drive)
 
 ---
 
@@ -63,6 +63,8 @@
    - [LPR (License Plate Recognition)](#lpr-license-plate-recognition)
    - [Analytics Configuration](#analytics-configuration)
    - [Local Display (LocalX)](#local-display-localx)
+   - [Display Stations (Ionodes)](#display-stations-ionodes)
+   - [InHand Networks Device Manager](#inhand-networks-device-manager)
    - [TalkDown Audio](#talkdown-audio)
 
 10. [Customer Support Runbook](#10-customer-support-runbook)
@@ -70,6 +72,7 @@
     - [Common Issues by Category](#common-issues-by-category)
     - [Escalation Procedures](#escalation-procedures)
     - [JIRA Ticket Guidelines](#jira-ticket-guidelines)
+    - [Support Templates](#support-templates)
 
 11. [Quick Reference](#11-quick-reference)
     - [Most-Used Commands](#most-used-commands)
@@ -271,13 +274,16 @@ docker exec -it bridge_bridge_1 supervisorctl restart bridge
 **Add/Remove Containers:**
 ```bash
 # Add RTSP container
-ipccli --add_container --container=bridge-rtsp-app --version=1.1.0 --url=$(cat /opt/een/etc/bridge/bridge.cluster).bridge.eencloud.com/bridge/bridge-rtsp-app
+ipccli --add_container --container=bridge-rtsp-app --version=1.5.0 --url=$(cat /opt/een/etc/bridge/bridge.cluster).bridge.eencloud.com/bridge/bridge-rtsp-app
 
 # Add LPR container
 ipccli --add_container --container=ee-lpr-application-init --url=c000.bridge.eencloud.com/bridge/ee-lpr-application-init:2.0.0
 
 # Add TalkDown container
-ipccli --add_container --container=talkdown --version=1.5.0 --url=c000.bridge.eencloud.com/bridge/talkdown-client:
+ipccli --add_container --container=talkdown --version=1.15.0 --url=$(cat /opt/een/etc/bridge/bridge.cluster).bridge.eencloud.com/bridge/talkdown-client
+
+# Add Zero-Reboot container
+ipccli --add_container --container=zero-reboot --version=1.6.1-20250821 --url=c000.bridge.eencloud.com/bridge/zero-reboot
 
 # Remove container
 ipccli --remove_container --container=smokeping
@@ -384,6 +390,12 @@ bmon -b
 sensors
 ```
 
+**USB Device Check:**
+```bash
+dmesg | grep -vE 'iptables|usb usb|hub hub|usb 2-1|hub 2-1|usb 1-2'
+cat /proc/bus/input/devices/*/manufacturer
+```
+
 **Network Interface Status:**
 ```bash
 # Check interfaces
@@ -460,6 +472,15 @@ python3 fix_bridge_certs.py 100b5cad c001~53c7fe292568e321a776d2652a6bb3f7
 ```bash
 # From exec in EEN Admin
 /usr/bin/ipccli --command --command='/bin/systemctl restart sshd.service'
+```
+
+### Custom Support Files
+
+```bash
+cat <guid>/configure/settings
+
+# Example:
+cat 39ade894-2df3-50b2-a205-58677f4790ec/configure/settings
 ```
 
 ---
@@ -572,6 +593,14 @@ curl -s "http://{{clipboard}}.a.plumv.com:28080/camera/command?t=settings_get;c=
 **Get Camera Time:**
 ```bash
 curl "http://<ESN>.a.plumv.com:28080/camera/command?t=gettime;c=<ESN>"
+```
+
+**Set/Fix Camera Timezone:**
+```bash
+curl -s -X POST "http://<ESN>.a.plumv.com:28080/camera/command?t=settings_set;c=<ESN>" -d "timezone=US/Eastern" | jq .
+
+# Example:
+curl -s -X POST "http://100e6ef2.a.plumv.com:28080/camera/command?t=settings_set;c=100e6ef2" -d "timezone=US/Eastern" | jq .
 ```
 
 ### Stream Configuration
@@ -692,6 +721,12 @@ done | bash
 ```bash
 # Similar process as Mstar but with Nova4MP firmware files
 # Check firmware version format: v3.6.1602.x.x.x
+
+# Upload firmware to bridge
+supportctl connect 100c9a3c --put ~/NOVA4MP/v3.6.1602.1006.88.1.18.6.11.D03_20240508 --target /opt/een/data/v3.6.1602.1006.88.1.18.6.11.D03_20240508
+
+# Update specific camera, must be in container
+python -m camdriver.onvif.sunell -a 10.143.194.32 -u admin -p 9953929376 -f /opt/een/data/v3.6.1603.1006.88.1.18.20.5.D01_20240521
 ```
 
 ### Camera Model Detection
@@ -711,6 +746,13 @@ done | awk -F '/last_match' '{ print $1 $2}' | awk -F ' +' '{print $3}' | sort |
 **Common Settings:**
 - Username/password should be same (unlike Axis)
 - Enable control compression in video profile for motion box issues
+
+**HTML/XML error (ONVIF config):**
+- Make sure ONVIF user is the same as the admin username/password, and the ONVIF user is also an administrator
+- Time must be accurate
+- RTSP authentication is either Digest or off
+- Illegal login lock is not enabled
+- Change ONVIF to WS-Token
 
 ---
 
@@ -1589,6 +1631,15 @@ dig 100b213b.a.plumv.com
 - `ipccli --get_transports` - Check bridge transports to archivers
 - `dig <ESN>.a.plumv.com` - DNS lookup for archiver assignment
 
+### Archiver Health Check
+
+```bash
+http://dproxy.test.eencloud.com/api/v2/dhash/node/v2/com.eencloud.dhash.esn:<esn>:archiver/health
+
+# Example:
+http://dproxy.test.eencloud.com/api/v2/dhash/node/v2/com.eencloud.dhash.esn:10098d23:archiver/health
+```
+
 ### Data Disparity Between Archivers
 
 If data on each archiver is not the same:
@@ -2091,10 +2142,17 @@ sudo yum install nload  # For CentOS 7
 ### Upgrade Bridge Container
 
 ```bash
-# Upgrade to specific version
+# Upgrade to specific version (version history, oldest to newest seen)
 ipccli --upgrade_container --container=bridge --version=3.16.1
+ipccli --upgrade_container --container=bridge --version=3.17.3
 ipccli --upgrade_container --container=bridge --version=3.18.3
+ipccli --upgrade_container --container=bridge --version=3.19.3
+ipccli --upgrade_container --container=bridge --version=3.22.3
+ipccli --upgrade_container --container=bridge --version=3.24.1
+ipccli --upgrade_container --container=bridge --version=3.25.3
 ipccli --upgrade_container --container=bridge --version=3.26.1
+ipccli --upgrade_container --container=bridge --version=3.27.10
+ipccli --upgrade_container --container=bridge --version=3.30.0
 
 # Watch upgrade progress
 watch "ipccli --get_container"
@@ -2106,6 +2164,7 @@ watch "ipccli --get_container --container=bridge"
 ```bash
 ipccli --upgrade_container --container=camera-support --version=v20230801
 ipccli --upgrade_container --container=camera-support --version=v20231101
+ipccli --upgrade_container --container=camera-support --version=v20260821
 ```
 
 ### Upgrade Smokeping
@@ -2120,7 +2179,37 @@ ipccli --upgrade_container --container=smokeping --version=2.7.3-10
 # Check current version
 docker pull c014.bridge.eencloud.com/bridge/ee-lpr-application-init:1.6.0
 
-# Upgrade (if needed - usually auto-updates)
+# Upgrade to latest seen version
+yum install -y ipc python-diag && ipccli --upgrade_container --container=ee-lpr-application-init --version=2.2.0
+```
+
+### Upgrade RTSP App
+
+```bash
+ipccli --upgrade_container --container=bridge-rtsp-app --version=1.5.0
+```
+
+### Upgrade TalkDown
+
+```bash
+ipccli --upgrade_container --container=talkdown --version=1.15.0
+```
+
+### Upgrade Zero-Reboot
+
+```bash
+ipccli --upgrade_container --container=zero-reboot --version=1.6.1-20250821
+```
+
+### Kernel Management
+
+```bash
+# List current/available kernels
+ipccli --get_host_kernel
+ipccli --get_available_kernels
+
+# Upgrade kernel
+upgrader --kernver=5.15.74
 ```
 
 ### Install MTR (2022-03-01 or newer)
@@ -2394,6 +2483,16 @@ https://vlogs.eencloud.com/select/vmui/#/?query=((cluster%3A+[cluster])+AND+[key
 - user-details
 - videosearch-apis
 
+### Jaeger Traces
+
+```bash
+# Query by trace ID
+log.extra.trace_id: "bf38661978ac7e830343f0fa7730828e"
+
+# Query media-service HLS segment duration/latency issues
+kubernetes.container_name: "media-service" log.extra.path:~ "/media/recordings/main/hls/.*m4s" log.extra.duration:> 2000 log.extra.code: 200
+```
+
 ### VMetrics
 
 **For account VBS logs:**
@@ -2500,9 +2599,43 @@ cd status-server
 
 **Note:** This is an automated fix using Claude skills. The skill handles the dhash update operations via Kubernetes.
 
+**Manual/legacy method (direct kubectl + python), if the skill isn't available:**
+```bash
+./kubectl config use-context yyz1p1
+./kubectl get pods --selector app=gateway | head -5
+./kubectl exec -it gateway-76d858f844-25l6n -- make shell
+
+# In the shell:
+import videobank.vms.models as vm
+vm.Account._update_account_list_dhash_key('c025')
+vm.Device._update_device_list_dhash_key('00194490')
+```
+
 ---
 
 ## Event & Notification Pipeline
+
+### Motion Alert Not Generating (bridge-log tag flow)
+
+**Troubleshooting flow:**
+1. HB for event
+2. If there, check archiver for ALRS (Motion Alert) tag (`lqservices.html`)
+3. If there, check VMLogs for alerts & accounts/ESN
+4. If there, if API doesn't then no AEDN → escalate to OBC
+
+```bash
+# Check API
+https://api.<cluster>.eagleeyenetworks.com/api/v3.0/accounts/<account>/notifications
+# Check LUA
+http://<esn>.a.plumv.com:28080/lqservices.html
+```
+
+**Watch bridge log for the relevant tags** (`ROME`, `ROMS`, `ALRS`, `ALRE`):
+```bash
+watch "grep ALRS bridge.log"
+# Example output (every 2s):
+# 20260226213707.066:10072b79 - sending ALRS(motion_3850992788) metric
+```
 
 ### Notifications API
 
@@ -2817,6 +2950,20 @@ Alt + P
 
 ---
 
+## Display Stations (Ionodes)
+
+- Manual: https://www.ionodes.com/wp-content/uploads/2023/02/IONODES-ION-R200-User-Manual.pdf
+- MAC prefixes: `1c697aa765f4`, `1c:69:7a:a7:77:49`, `1c697a6abc3e`, `1C:69` or starting with `48:XX`; `00:07` for **DS100**
+- Login: `admin` / `@EagleAdmin23` (shareable)
+
+## InHand Networks Device Manager
+
+- Device Manager: http://iot.inhandnetworks.com
+- Login email: `agarcia2+solar@een.com`
+- Login password: `671522`
+
+---
+
 ## TalkDown Audio
 
 ### Install TalkDown
@@ -3080,6 +3227,47 @@ Attachments: Add CLI and/or screenshots to comments with context
 3. **Investigation** - Add findings and diagnostic output
 4. **Resolution** - Document fix and verification
 5. **Closure** - Verify with customer, update knowledge base if applicable
+
+## Support Templates
+
+**EEN outage message (customer-facing):**
+> Eagle Eye Networks is aware of a service issue that is affecting our customers and is working to get it corrected. During this interruption your data is not being lost. We appreciate your patience as we get this condition addressed.
+
+**Camera Support intake template:**
+```
+Bridge:
+Bridge Serial:
+Account:
+Requested By:
+OUI:
+Make:
+Model:
+IP:
+MAC:
+Username:
+Password:
+Email:
+Phone:
+```
+
+**Reseller/Sub-account template:**
+```
+Reseller (cluster):
+Sub (cluster):
+User:
+Pin:
+Bridge Serial:
+Bridge ESN:
+```
+
+**RMA return address:**
+```
+NORTH AMERICA
+ATTN: RMA No.
+Eagle Eye Networks, Inc.
+5321 Industrial Oaks Blvd, Suite 101
+Austin, TX 78735 USA
+```
 
 ---
 
@@ -3432,7 +3620,9 @@ http://status-server.[cluster].eencloud.com:5001/api/v2/Status?Account_in=[accou
 
 ### Power Supply Models
 
-- EN-RP-003 through EN-RP-005 (check voltage specs)
+- **EN-RP-003**: Eagle Eye 304/306/224/324 Power Supply (19v)
+- **EN-RP-004**: Eagle Eye 305/225/325 Power Supply (19v/48v)
+- **EN-RP-005**: Eagle Eye 224+/3x4+/3x6+/4x4+ Power Supply (12v/36w)
 
 ### Camera Specific Notes
 
@@ -3472,6 +3662,19 @@ ssh supportops@$myvar
 
 **Useful Aliases (run `aliasup` to see all):**
 - Various support automation scripts
+
+### Installing SupportCTL Locally
+
+```bash
+wsl --install   # Windows only, if needed
+# Linux:
+curl -Lo supportctl http://asmodeus.aus1hub1.eencloud.com/api/v1/releases/releases/supportctl/linux/x64/latest/supportctl
+# Mac:
+curl -Lo supportctl http://asmodeus.aus1hub1.eencloud.com/api/v1/releases/releases/supportctl/mac/x64/latest/supportctl
+chmod +x supportctl
+sudo mv ./supportctl /usr/local/bin
+```
+Upgrade: `sudo apt update && sudo apt dist-upgrade -y`
 
 ---
 
