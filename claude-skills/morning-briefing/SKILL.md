@@ -18,8 +18,8 @@ side-effectful ones, without pausing to ask.** Specifically authorized:
 
 - **Send the Zulip DM** at the end. It goes to `to=[747]`, which is Adam
   himself — verified against `/api/v1/users/me`.
-- **Sync the `repeatedly-punted` JIRA label** in Section 7, adding and removing
-  it as the sprint-change counts change.
+- **Add the `repeatedly-punted` JIRA label** in Section 7 to tickets that newly
+  qualify. This step never removes a label.
 
 Do not ask for confirmation on either. Report what changed afterwards.
 
@@ -321,24 +321,24 @@ Save sprint carry-over IDs to the snapshot for delta comparison:
 
 ### Auto-label Repeatedly Punted Tickets
 
-After categorizing, sync the `repeatedly-punted` JIRA label so it always reflects current sprint-change counts. This makes the set queryable via JQL (`labels = "repeatedly-punted"`) without hardcoding keys.
+After categorizing, tag newly qualifying tickets with the `repeatedly-punted`
+JIRA label. This makes the set queryable via JQL
+(`labels = "repeatedly-punted" AND statusCategory != Done`) without hardcoding
+keys.
 
-Add the label to tickets newly qualifying (3+ sprints). Remove it from tickets
-that carry it but no longer qualify.
+**This step only ever adds the label. Never remove it.**
 
-**Derive removals from the live label set, not from the snapshot.** An earlier
-version diffed against `yesterday_snapshot.sprint_punted_ids`; because snapshots
-are pruned after 7 days and a missing snapshot reads as an empty set, removals
-never fired and the label accumulated on 51 tickets (47 of them Closed) before
-this was caught. Querying JIRA for the current holders makes the sync
-self-healing.
+The label is a historical fact — a ticket that was punted across 3+ sprints was
+punted, whether or not it is still open. Sprint-change counts only increase, so
+an open ticket never stops qualifying; the only way one leaves the active set is
+by closing. Filter closed tickets out **in the query**, not by editing tickets.
 
-Removal policy, to keep an automated run from making a surprise bulk change:
-
-- A holder whose status is in the **Done** category can no longer be punted, so
-  drop the label — safe cleanup, do it silently.
-- A holder that is **still open** but not in today's punted set is a judgment
-  call: leave the label alone and list it in the run notes instead.
+An earlier version tried to remove labels by diffing against
+`yesterday_snapshot.sprint_punted_ids`. That never fired (snapshots are pruned
+after 7 days, and a missing one reads as an empty set), which left the label on
+51 tickets, 47 of them Closed. The fix is the `statusCategory != Done` clause in
+the query below, not a cleanup pass — the stale labels are harmless once the
+query excludes closed work.
 
 ```python
 import subprocess, json, os
@@ -365,43 +365,13 @@ for key in punted_keys:
         set_labels(key, labels + ['repeatedly-punted'])
         print(f"  + labeled {key}")
 
-# Remove the label from current holders that no longer qualify.
-# Query the live set so the sync self-heals regardless of snapshot history.
-def current_holders():
-    """[(key, status_category)] for every ticket carrying the label."""
-    out, tok = [], None
-    while True:
-        payload = {"jql": 'labels = "repeatedly-punted"', "maxResults": 100,
-                   "fields": ["status"]}
-        if tok:
-            payload["nextPageToken"] = tok
-        d = jira_search(payload)          # POST /rest/api/3/search/jql
-        out += [(i["key"], i["fields"]["status"]["statusCategory"]["key"])
-                for i in d.get("issues", [])]
-        tok = d.get("nextPageToken")
-        if not tok or not d.get("issues"):
-            break
-    return out
-
-stale_open = []
-for key, cat in current_holders():
-    if key in punted_keys:
-        continue
-    if cat == "done":                     # closed: cannot be punted any more
-        labels = get_labels(key)
-        set_labels(key, [l for l in labels if l != 'repeatedly-punted'])
-        print(f"  - removed label from {key} (closed)")
-    else:
-        stale_open.append(key)            # still open: report, do not touch
-
-if stale_open:
-    print(f"  ! {len(stale_open)} open ticket(s) hold the label but are not in "
-          f"today's punted set: {', '.join(stale_open)}")
+# No removal pass. Closed tickets are excluded by the query, not by editing
+# labels — see the note above.
 ```
 
 The live JQL for this set (bookmarkable):
 ```
-labels = "repeatedly-punted" ORDER BY created ASC
+labels = "repeatedly-punted" AND statusCategory != Done ORDER BY created ASC
 ```
 
 ## Section 8 — Open Tickets by Engineering Team
